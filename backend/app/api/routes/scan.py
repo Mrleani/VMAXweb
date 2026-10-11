@@ -9,6 +9,7 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.config import Settings, get_settings
 from app.core.safety import TargetValidationError
 from app.db import ScanRepository, get_repository
+from app.db.account_store import account_store
 from app.models import ScanResult
 from app.schemas import (
     ModuleInfo,
@@ -20,7 +21,8 @@ from app.schemas import (
 )
 from app.scanners import SCANNER_REGISTRY
 from app.services import ScanEngine
-from app.services.pdf import build_report
+from app.services.alerts import dispatch_alerts
+from app.services.pdf import ReportBranding, build_report
 from app.services.verification import verify_domain
 
 router = APIRouter(prefix="/api/v1", tags=["scan"])
@@ -54,10 +56,18 @@ def _month_start() -> datetime:
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
+async def _plan_for(repository: ScanRepository, user_id: str) -> str:
+    """Account store is authoritative; repository is the legacy fallback."""
+    plan = account_store.get(user_id).plan
+    if plan == "pro":
+        return "pro"
+    return await repository.get_plan(user_id)
+
+
 async def _enforce_plan_limit(
     repository: ScanRepository, user: CurrentUser, settings: Settings
 ) -> None:
-    plan = await repository.get_plan(user.id)
+    plan = await _plan_for(repository, user.id)
     if plan == "pro":
         return
     used = await repository.count_scans_since(user.id, _month_start())
@@ -90,6 +100,7 @@ async def create_scan(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     scan_id = await repository.save_scan(user.id, result)
+    await dispatch_alerts(settings, account_store.get(user.id), result, scan_id)
     return _to_response(scan_id, result)
 
 
@@ -137,8 +148,17 @@ async def get_report(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
 
-    pdf_bytes = build_report(result)
-    filename = f"vmaxweb-audit-{result.target.host}.pdf"
+    account = account_store.get(user.id)
+    branding = None
+    if account.is_pro:
+        branding = ReportBranding(
+            brand_name=account.brand_name,
+            logo_base64=account.logo_base64,
+            brand_color=_parse_color(account.brand_color),
+        )
+    pdf_bytes = build_report(result, branding)
+    slot = (branding.brand_name if branding and branding.brand_name else "vmaxweb").lower()
+    filename = f"{slot}-audit-{result.target.host}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -152,7 +172,7 @@ async def get_me(
     repository: ScanRepository = Depends(get_repository),
     settings: Settings = Depends(get_settings),
 ) -> ProfileInfo:
-    plan = await repository.get_plan(user.id)
+    plan = await _plan_for(repository, user.id)
     used = await repository.count_scans_since(user.id, _month_start())
     return ProfileInfo(
         id=user.id,
@@ -179,3 +199,15 @@ async def list_modules() -> list[ModuleInfo]:
 def _host_of(url: str) -> str:
     candidate = url if "://" in url else f"https://{url}"
     return (urlsplit(candidate).hostname or "").lower()
+
+
+def _parse_color(value: str | None) -> tuple[int, int, int] | None:
+    if not value:
+        return None
+    token = value.strip().lstrip("#")
+    if len(token) != 6:
+        return None
+    try:
+        return (int(token[0:2], 16), int(token[2:4], 16), int(token[4:6], 16))
+    except ValueError:
+        return None

@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import base64
+import io
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from fpdf import FPDF
 
 from app.models import Finding, ScanResult, Severity
+
+
+@dataclass(slots=True)
+class ReportBranding:
+    brand_name: str | None = None
+    logo_base64: str | None = None
+    brand_color: tuple[int, int, int] | None = None
+
 
 # RGB brand palette
 _DARK = (11, 15, 23)
@@ -57,12 +68,15 @@ def _grade_color(score: int) -> tuple[int, int, int]:
 
 
 class _Report(FPDF):
-    def __init__(self) -> None:
+    def __init__(self, branding: ReportBranding | None = None) -> None:
         super().__init__(orientation="P", unit="mm", format="A4")
+        self.branding = branding or ReportBranding()
+        self.accent = self.branding.brand_color or _EMERALD
+        self.brand_label = self.branding.brand_name or "VMAXweb"
         self.set_auto_page_break(auto=True, margin=20)
         self.set_margins(15, 15, 15)
-        self.set_title("VMAXweb Security Audit Report")
-        self.set_author("VMAXweb by StarNet")
+        self.set_title(f"{self.brand_label} Security Audit Report")
+        self.set_author(self.brand_label)
 
     def header(self) -> None:
         if self.page_no() == 1:
@@ -72,9 +86,9 @@ class _Report(FPDF):
         self.set_xy(15, 4)
         self.set_font("Helvetica", "B", 9)
         self.set_text_color(*_WHITE)
-        self.cell(0, 6, "VMAXweb  -  Security Audit Report", align="L")
+        self.cell(0, 6, f"{_sanitize(self.brand_label)}  -  Security Audit Report", align="L")
         self.set_x(-60)
-        self.set_text_color(*_EMERALD)
+        self.set_text_color(*self.accent)
         self.cell(45, 6, "by StarNet", align="R")
         self.ln(14)
 
@@ -85,7 +99,7 @@ class _Report(FPDF):
         self.cell(
             0,
             8,
-            f"VMAXweb by StarNet  |  Page {self.page_no()}  |  Confidential",
+            f"{_sanitize(self.brand_label)}  |  Page {self.page_no()}  |  Confidential",
             align="C",
         )
 
@@ -112,17 +126,25 @@ def _cover(pdf: _Report, result: ScanResult) -> None:
     pdf.add_page()
     _rounded_card(pdf, 15, 15, pdf.epw, 34, fill=_CARD, border=_BORDER)
 
-    pdf.set_xy(22, 21)
+    logo_drawn = _draw_logo(pdf, 20, 19, 12)
+
+    title_x = 38 if logo_drawn else 22
+    pdf.set_xy(title_x, 21)
     pdf.set_font("Helvetica", "B", 22)
     pdf.set_text_color(*_WHITE)
-    pdf.cell(0, 9, "VMAXweb", align="L")
+    pdf.cell(0, 9, _sanitize(pdf.brand_label), align="L")
 
-    pdf.set_xy(22, 31)
+    pdf.set_xy(title_x, 31)
     pdf.set_font("Helvetica", "", 10)
-    pdf.set_text_color(*_EMERALD)
-    pdf.cell(0, 5, "Maximum Web & API Security Engine  -  by StarNet", align="L")
+    pdf.set_text_color(*pdf.accent)
+    pdf.cell(
+        0,
+        5,
+        "Maximum Web & API Security Engine  -  by StarNet",
+        align="L",
+    )
 
-    pdf.set_xy(22, 37)
+    pdf.set_xy(title_x, 37)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*_MUTED)
     generated = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
@@ -132,6 +154,19 @@ def _cover(pdf: _Report, result: ScanResult) -> None:
     pdf.set_font("Helvetica", "B", 10)
     pdf.set_text_color(*_CYAN)
     pdf.cell(33, 6, f"Engine v{result.engine_version}", align="R")
+
+
+def _draw_logo(pdf: _Report, x: float, y: float, size: float) -> bool:
+    raw = pdf.branding.logo_base64
+    if not raw:
+        return False
+    try:
+        payload = raw.split(",", 1)[1] if raw.startswith("data:") else raw
+        stream = io.BytesIO(base64.b64decode(payload))
+        pdf.image(stream, x=x, y=y, w=size, h=size, keep_aspect_ratio=True)
+        return True
+    except Exception:  # noqa: BLE001 - a bad logo must never break the report
+        return False
 
 
 def _target_and_score(pdf: _Report, result: ScanResult) -> None:
@@ -280,8 +315,10 @@ def _finding_block(pdf: _Report, finding: Finding) -> None:
     pdf.ln(4)
 
 
-def build_report(result: ScanResult) -> bytes:
-    pdf = _Report()
+def build_report(
+    result: ScanResult, branding: ReportBranding | None = None
+) -> bytes:
+    pdf = _Report(branding)
     _cover(pdf, result)
     _target_and_score(pdf, result)
     _findings_section(pdf, result)

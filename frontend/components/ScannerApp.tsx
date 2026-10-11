@@ -13,6 +13,7 @@ import { DocumentationSection } from "./DocumentationSection";
 import { Footer } from "./Footer";
 import { Header } from "./Header";
 import { PricingSection } from "./PricingSection";
+import { ProPanel } from "./ProPanel";
 import { ResultsDashboard } from "./ResultsDashboard";
 import { ScanHistory } from "./ScanHistory";
 import { ScannerHero } from "./ScannerHero";
@@ -196,8 +197,9 @@ export function ScannerApp() {
   }, [result, show, session]);
 
   const handleUpgrade = useCallback(() => {
-    show("Redirecting to Stripe Pro Checkout ($29/mo)...");
-  }, [show]);
+    goToSection("pro");
+    show("Activate Pro from the Pro Console below.");
+  }, [goToSection, show]);
 
   const handleActivePlan = useCallback(() => {
     show("You are currently using the Free Full-Power Plan.");
@@ -231,6 +233,7 @@ export function ScannerApp() {
             <ScanHistory accessToken={session?.access_token ?? null} onRefreshSignal={historyRefresh} />
             <ArchitectureSection onOpenPricing={goPricing} />
             <PricingSection onUpgrade={handleUpgrade} onActivePlan={handleActivePlan} />
+            <ProPanel accessToken={session?.access_token ?? null} />
             <DocumentationSection />
           </div>
         )}

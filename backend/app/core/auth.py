@@ -14,6 +14,7 @@ import jwt
 from fastapi import Header, HTTPException, status
 
 from app.core.config import get_settings
+from app.db.account_store import account_store
 
 _DEV_USER_ID = "00000000-0000-0000-0000-000000000000"
 
@@ -30,8 +31,26 @@ DEV_USER = CurrentUser(id=_DEV_USER_ID, email="dev@vmaxweb.local", is_anonymous=
 
 async def get_current_user(
     authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> CurrentUser:
     settings = get_settings()
+
+    # API keys (Pro) take precedence when supplied.
+    candidate_key = x_api_key
+    if candidate_key is None and authorization and authorization.lower().startswith("bearer "):
+        maybe = authorization.split(" ", 1)[1].strip()
+        if maybe.startswith("vmax_"):
+            candidate_key = maybe
+
+    if candidate_key:
+        user_id = account_store.resolve_api_key(candidate_key)
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid API key",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return CurrentUser(id=user_id, email=None)
 
     if not authorization or not authorization.lower().startswith("bearer "):
         if settings.auth_required:

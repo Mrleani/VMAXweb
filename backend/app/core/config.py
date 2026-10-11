@@ -40,6 +40,32 @@ class Settings(BaseSettings):
     # Free plan guardrail
     free_monthly_scan_limit: int = 5
 
+    # Pro plan / billing (Stripe checkout is wired here once keys are added).
+    pro_price_usd: int = 29
+    stripe_secret_key: str = ""
+    stripe_price_id: str = ""
+    public_base_url: str = "https://vma-xweb.vercel.app"
+
+    # Scheduled scans (Pro). A background task polls for due schedules.
+    scheduler_enabled: bool = True
+    scheduler_interval_seconds: int = 60
+
+    # Alert delivery (Pro). Leave blank to disable a channel.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "alerts@vmaxweb.io"
+    smtp_starttls: bool = True
+
+    @property
+    def pro_enabled(self) -> bool:
+        return bool(self.stripe_secret_key and self.stripe_price_id)
+
+    @property
+    def email_alerts_configured(self) -> bool:
+        return bool(self.smtp_host and self.smtp_from)
+
     @property
     def is_production(self) -> bool:
         return self.environment.lower() in {"production", "prod"}

@@ -23,3 +23,19 @@ services:
         sync: false
       - key: VMAX_AUTH_REQUIRED
         value: "false"
+      - key: VMAX_SCHEDULER_ENABLED
+        value: "true"
+      - key: VMAX_SMTP_HOST
+        sync: false
+      - key: VMAX_SMTP_PORT
+        value: "587"
+      - key: VMAX_SMTP_USER
+        sync: false
+      - key: VMAX_SMTP_PASSWORD
+        sync: false
+      - key: VMAX_SMTP_FROM
+        sync: false
+      - key: VMAX_STRIPE_SECRET_KEY
+        sync: false
+      - key: VMAX_STRIPE_PRICE_ID
+        sync: false

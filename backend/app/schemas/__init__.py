@@ -1,3 +1,16 @@
+from app.schemas.account import (
+    AccountInfo,
+    AccountUpdate,
+    ApiKeyCreate,
+    ApiKeyCreated,
+    ApiKeyInfo,
+    Entitlements,
+    PlanUpdate,
+    ScheduleCreate,
+    ScheduleInfo,
+    SupportRequest,
+    SupportResponse,
+)
 from app.schemas.scan import (
     ModuleInfo,
     ProfileInfo,
@@ -8,10 +21,21 @@ from app.schemas.scan import (
 )
 
 __all__ = [
+    "AccountInfo",
+    "AccountUpdate",
+    "ApiKeyCreate",
+    "ApiKeyCreated",
+    "ApiKeyInfo",
+    "Entitlements",
     "ModuleInfo",
+    "PlanUpdate",
     "ProfileInfo",
     "ScanHistoryItem",
     "ScanRequest",
     "ScanResponse",
     "ScanSummary",
+    "ScheduleCreate",
+    "ScheduleInfo",
+    "SupportRequest",
+    "SupportResponse",
 ]

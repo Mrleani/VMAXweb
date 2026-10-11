@@ -61,4 +61,68 @@ export interface ProfileInfo {
   monthly_limit: number | null;
 }
 
+export interface Entitlements {
+  unlimited_scans: boolean;
+  active_modules: boolean;
+  scheduled_scans: boolean;
+  alerts: boolean;
+  webhooks: boolean;
+  api_access: boolean;
+  white_label_pdf: boolean;
+  priority_support: boolean;
+}
+
+export interface AccountInfo {
+  id: string;
+  email: string | null;
+  plan: "free" | "pro";
+  monthly_used: number;
+  monthly_limit: number | null;
+  entitlements: Entitlements;
+  brand_name: string | null;
+  logo_base64: string | null;
+  brand_color: string | null;
+  slack_webhook_url: string | null;
+  webhook_url: string | null;
+  webhook_secret_set: boolean;
+  alert_email: string | null;
+  alert_min_severity: "critical" | "warning" | "info";
+  priority_support: boolean;
+}
+
+export interface AccountUpdatePayload {
+  brand_name?: string | null;
+  logo_base64?: string | null;
+  brand_color?: string | null;
+  slack_webhook_url?: string | null;
+  webhook_url?: string | null;
+  webhook_secret?: string | null;
+  alert_email?: string | null;
+  alert_min_severity?: "critical" | "warning" | "info";
+}
+
+export interface ApiKeyInfo {
+  id: string;
+  name: string;
+  prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface ApiKeyCreated {
+  key: ApiKeyInfo;
+  secret: string;
+  warning: string;
+}
+
+export interface ScheduleInfo {
+  id: string;
+  url: string;
+  cadence: "daily" | "weekly";
+  enabled: boolean;
+  next_run_at: string;
+  last_run_at: string | null;
+  last_scan_id: string | null;
+}
+
 export type SeverityFilter = "all" | Severity;

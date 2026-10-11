@@ -102,8 +102,8 @@ export function PricingSection({ onUpgrade, onActivePlan }: PricingSectionProps)
       </div>
 
       <p className="text-center text-[11px] text-slate-500">
-        Prices in USD. Cancel anytime. Pro billing is processed securely via
-        Stripe.
+        Prices in USD. Cancel anytime. Activate Pro instantly from the Pro Console
+        below; connect Stripe keys to enable paid checkout.
       </p>
     </section>
   );
