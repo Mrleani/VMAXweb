@@ -8,8 +8,11 @@ import { getSession, signOut } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/client";
 import type { ScanResponse } from "@/lib/types";
 import { AuthModal } from "./AuthModal";
+import { ArchitectureSection } from "./ArchitectureSection";
+import { DocumentationSection } from "./DocumentationSection";
 import { Footer } from "./Footer";
 import { Header } from "./Header";
+import { PricingSection } from "./PricingSection";
 import { ResultsDashboard } from "./ResultsDashboard";
 import { ScanHistory } from "./ScanHistory";
 import { ScannerHero } from "./ScannerHero";
@@ -36,6 +39,7 @@ export function ScannerApp() {
   const [session, setSession] = useState<Session | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [historyRefresh, setHistoryRefresh] = useState(0);
+  const [pendingScroll, setPendingScroll] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const supabase = createClient();
 
@@ -131,13 +135,35 @@ export function ScannerApp() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
-  const goPricing = useCallback(() => {
-    if (view !== "results") {
-      show("Run an audit first to unlock the full dashboard, then upgrade.");
-      return;
+  const scrollToSection = useCallback((id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  const goToSection = useCallback(
+    (id: string) => {
+      if (view === "home") {
+        scrollToSection(id);
+      } else {
+        setPendingScroll(id);
+        setView("home");
+      }
+    },
+    [view, scrollToSection],
+  );
+
+  useEffect(() => {
+    if (view === "home" && pendingScroll) {
+      const timer = setTimeout(() => {
+        scrollToSection(pendingScroll);
+        setPendingScroll(null);
+      }, 60);
+      return () => clearTimeout(timer);
     }
-    document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" });
-  }, [view, show]);
+  }, [view, pendingScroll, scrollToSection]);
+
+  const goPricing = useCallback(() => {
+    goToSection("pricing");
+  }, [goToSection]);
 
   const exportPdf = useCallback(async () => {
     if (!result) return;
@@ -169,6 +195,14 @@ export function ScannerApp() {
     }
   }, [result, show, session]);
 
+  const handleUpgrade = useCallback(() => {
+    show("Redirecting to Stripe Pro Checkout ($29/mo)...");
+  }, [show]);
+
+  const handleActivePlan = useCallback(() => {
+    show("You are currently using the Free Full-Power Plan.");
+  }, [show]);
+
   async function handleSignOut() {
     try {
       await signOut();
@@ -183,6 +217,8 @@ export function ScannerApp() {
       <Header
         onHome={goHome}
         onPricing={goPricing}
+        onArchitecture={() => goToSection("architecture")}
+        onDocumentation={() => goToSection("documentation")}
         session={session}
         onSignIn={() => setAuthOpen(true)}
         onSignOut={handleSignOut}
@@ -190,9 +226,12 @@ export function ScannerApp() {
 
       <main className="mx-auto w-full max-w-7xl flex-grow px-4 py-8 sm:px-6 lg:px-8">
         {view === "home" && (
-          <div className="space-y-10">
+          <div className="space-y-16">
             <ScannerHero onScan={handleScan} busy={false} />
             <ScanHistory accessToken={session?.access_token ?? null} onRefreshSignal={historyRefresh} />
+            <ArchitectureSection onOpenPricing={goPricing} />
+            <PricingSection onUpgrade={handleUpgrade} onActivePlan={handleActivePlan} />
+            <DocumentationSection />
           </div>
         )}
         {view === "scanning" && (
@@ -206,10 +245,8 @@ export function ScannerApp() {
           <ResultsDashboard
             result={result}
             onExportPdf={exportPdf}
-            onUpgrade={() => show("Redirecting to Stripe Pro Checkout ($29/mo)...")}
-            onActivePlan={() =>
-              show("You are currently using the Free Full-Power Plan.")
-            }
+            onUpgrade={handleUpgrade}
+            onActivePlan={handleActivePlan}
           />
         )}
       </main>

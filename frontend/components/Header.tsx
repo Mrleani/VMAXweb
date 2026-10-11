@@ -1,19 +1,26 @@
 "use client";
 
 import { LogIn, LogOut, User } from "lucide-react";
-import { useToast } from "./Toast";
 
 interface HeaderProps {
   onHome: () => void;
   onPricing: () => void;
+  onArchitecture: () => void;
+  onDocumentation: () => void;
   session: any | null;
   onSignIn: () => void;
   onSignOut: () => void;
 }
 
-export function Header({ onHome, onPricing, session, onSignIn, onSignOut }: HeaderProps) {
-  const { show } = useToast();
-
+export function Header({
+  onHome,
+  onPricing,
+  onArchitecture,
+  onDocumentation,
+  session,
+  onSignIn,
+  onSignOut,
+}: HeaderProps) {
   const navClass = "hover:text-emerald-400 transition-colors";
 
   return (
@@ -48,9 +55,7 @@ export function Header({ onHome, onPricing, session, onSignIn, onSignOut }: Head
           </button>
           <button
             type="button"
-            onClick={() =>
-              show("Architecture Docs: Python FastAPI Engine & Next.js UI")
-            }
+            onClick={onArchitecture}
             className={navClass}
           >
             Architecture
@@ -60,9 +65,7 @@ export function Header({ onHome, onPricing, session, onSignIn, onSignOut }: Head
           </button>
           <button
             type="button"
-            onClick={() =>
-              show("Documentation: OWASP Top 10 Security Audit Guidelines")
-            }
+            onClick={onDocumentation}
             className={navClass}
           >
             Documentation
