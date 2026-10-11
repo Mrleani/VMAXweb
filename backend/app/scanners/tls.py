@@ -12,6 +12,7 @@ from cryptography.x509.oid import NameOID
 
 from app.models import Finding, Severity
 from app.scanners.base import BaseScanner, ScanContext
+from app.scoring.confidence import Evidence
 
 _MODERN_PROTOCOLS = {"TLSv1.2", "TLSv1.3"}
 _EXPIRY_WARNING_DAYS = 30
@@ -309,6 +310,7 @@ class TlsScanner(BaseScanner):
                 summary="Could not verify HTTP-to-HTTPS redirection.",
                 explanation="Verify that all HTTP traffic is redirected to HTTPS.",
                 fix_snippet="server { listen 80; return 301 https://$host$request_uri; }",
+                evidence=Evidence.MODERATE,
                 meta={"error": str(exc)},
             )
 

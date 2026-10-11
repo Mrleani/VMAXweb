@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 import secrets
 from dataclasses import dataclass
 
 from app.models import Finding, Severity
 from app.scanners.base import BaseScanner, ScanContext
+from app.scoring.confidence import Evidence
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,8 @@ class SensitivePath:
     fix_snippet: str
     markers: tuple[str, ...] = ()
     allow_html: bool = False
+    require_json: bool = False
+    regex: str | None = None
 
 
 SENSITIVE_PATHS: tuple[SensitivePath, ...] = (
@@ -34,6 +39,7 @@ SENSITIVE_PATHS: tuple[SensitivePath, ...] = (
         ),
         fix_snippet="location ~ /\\.env { deny all; return 404; }",
         markers=("=", "SECRET", "KEY", "PASSWORD"),
+        regex=r"(?m)^[A-Za-z0-9_]+\s*=",
     ),
     SensitivePath(
         id="dotenv_local",
@@ -43,6 +49,7 @@ SENSITIVE_PATHS: tuple[SensitivePath, ...] = (
         explanation="Environment overrides frequently contain live production secrets.",
         fix_snippet="location ~ /\\.env { deny all; return 404; }",
         markers=("=", "SECRET", "KEY", "PASSWORD"),
+        regex=r"(?m)^[A-Za-z0-9_]+\s*=",
     ),
     SensitivePath(
         id="dotenv_prod",
@@ -52,6 +59,7 @@ SENSITIVE_PATHS: tuple[SensitivePath, ...] = (
         explanation="Production environment files contain the most sensitive credentials.",
         fix_snippet="location ~ /\\.env { deny all; return 404; }",
         markers=("=", "SECRET", "KEY", "PASSWORD"),
+        regex=r"(?m)^[A-Za-z0-9_]+\s*=",
     ),
     SensitivePath(
         id="dotenv_backup",
@@ -61,6 +69,7 @@ SENSITIVE_PATHS: tuple[SensitivePath, ...] = (
         explanation="Forgotten backup copies of secrets bypass secret rotation.",
         fix_snippet="location ~ /\\.env { deny all; return 404; }",
         markers=("=", "SECRET", "KEY", "PASSWORD"),
+        regex=r"(?m)^[A-Za-z0-9_]+\s*=",
     ),
     SensitivePath(
         id="git_config",
@@ -100,6 +109,8 @@ SENSITIVE_PATHS: tuple[SensitivePath, ...] = (
         explanation="Configuration files frequently contain credentials and internal endpoints.",
         fix_snippet="location = /config.json { deny all; }",
         markers=("{", "}"),
+        require_json=True,
+        regex=r"(?i)^\s*[\[{]",
     ),
     SensitivePath(
         id="config_yml",
@@ -109,6 +120,7 @@ SENSITIVE_PATHS: tuple[SensitivePath, ...] = (
         explanation="YAML configuration often embeds database and API credentials.",
         fix_snippet="location ~ /\\.ya?ml$ { deny all; }",
         markers=(":", "password", "secret", "key"),
+        regex=r"(?m)^[A-Za-z0-9_.-]+\s*:\s*\S",
     ),
     SensitivePath(
         id="web_config",
@@ -192,6 +204,7 @@ SENSITIVE_PATHS: tuple[SensitivePath, ...] = (
         ),
         fix_snippet="# Require authentication or disable in production.",
         markers=("swagger", "openapi", "paths"),
+        require_json=True,
     ),
     SensitivePath(
         id="openapi",
@@ -201,6 +214,7 @@ SENSITIVE_PATHS: tuple[SensitivePath, ...] = (
         explanation="A public OpenAPI document exposes the full API surface.",
         fix_snippet="app = FastAPI(openapi_url=None)  # disable public schema",
         markers=("openapi", "paths"),
+        require_json=True,
     ),
     SensitivePath(
         id="swagger_ui",
@@ -220,6 +234,7 @@ SENSITIVE_PATHS: tuple[SensitivePath, ...] = (
         explanation="Springfox api-docs leak the full endpoint and model schema.",
         fix_snippet="springdoc.api-docs.enabled=false",
         markers=("swagger", "paths", "definitions"),
+        require_json=True,
     ),
     SensitivePath(
         id="actuator_env",
@@ -229,6 +244,7 @@ SENSITIVE_PATHS: tuple[SensitivePath, ...] = (
         explanation="Actuator env endpoints expose environment variables and secrets.",
         fix_snippet="management.endpoints.web.exposure.include=health",
         markers=("propertySources", "activeProfiles", "systemProperties"),
+        require_json=True,
     ),
     SensitivePath(
         id="actuator_health",
@@ -238,6 +254,7 @@ SENSITIVE_PATHS: tuple[SensitivePath, ...] = (
         explanation="Actuator health can disclose internal component status and versions.",
         fix_snippet="management.endpoints.web.exposure.include=health",
         markers=("status", "\"UP\"", "components"),
+        require_json=True,
     ),
     SensitivePath(
         id="h2_console",
@@ -267,6 +284,7 @@ SENSITIVE_PATHS: tuple[SensitivePath, ...] = (
         explanation="An open Elasticsearch exposes and often allows modification of all data.",
         fix_snippet="Enable X-Pack security and bind Elasticsearch to localhost.",
         markers=("green", "yellow", "index", "health"),
+        regex=r"\b(?:green|yellow|red)\s+(?:open|close)",
     ),
     SensitivePath(
         id="phpinfo",
@@ -378,12 +396,12 @@ class SensitiveFileScanner(BaseScanner):
     title = "Sensitive Data Exposure & OWASP Check"
 
     async def scan(self, ctx: ScanContext) -> list[Finding]:
-        baseline = await self._baseline_status(ctx)
+        baseline_status, baseline_body = await self._baseline(ctx)
         semaphore = asyncio.Semaphore(ctx.settings.max_concurrency)
 
         async def check(spec: SensitivePath) -> Finding:
             async with semaphore:
-                return await self._check_path(ctx, spec, baseline)
+                return await self._check_path(ctx, spec, baseline_status, baseline_body)
 
         findings = list(
             await asyncio.gather(*(check(spec) for spec in SENSITIVE_PATHS))
@@ -391,16 +409,20 @@ class SensitiveFileScanner(BaseScanner):
         findings.append(await self._check_cookies(ctx))
         return findings
 
-    async def _baseline_status(self, ctx: ScanContext) -> int | None:
+    async def _baseline(self, ctx: ScanContext) -> tuple[int | None, str | None]:
         random_path = f"/{secrets.token_hex(8)}"
         try:
             response = await ctx.client.get(f"{ctx.target.origin}{random_path}")
         except Exception:  # noqa: BLE001
-            return None
-        return response.status_code
+            return None, None
+        return response.status_code, self._normalize(response.text)
 
     async def _check_path(
-        self, ctx: ScanContext, spec: SensitivePath, baseline: int | None
+        self,
+        ctx: ScanContext,
+        spec: SensitivePath,
+        baseline_status: int | None,
+        baseline_body: str | None,
     ) -> Finding:
         url = f"{ctx.target.origin}{spec.path}"
         try:
@@ -414,13 +436,16 @@ class SensitiveFileScanner(BaseScanner):
                 summary="The path could not be retrieved.",
                 explanation=spec.explanation,
                 fix_snippet=spec.fix_snippet,
+                evidence=Evidence.WEAK,
                 meta={"error": str(exc)},
             )
 
-        body = response.text[:5000]
-        exposed = self._is_exposed(response, body, spec, baseline)
+        body = response.text[:20000]
+        evidence = self._classify(
+            response, body, spec, baseline_status, baseline_body
+        )
 
-        if exposed:
+        if evidence is not None:
             return self.result(
                 id=spec.id,
                 name=spec.name,
@@ -429,6 +454,7 @@ class SensitiveFileScanner(BaseScanner):
                 summary=f"{spec.path} is readable without authentication.",
                 explanation=spec.explanation,
                 fix_snippet=spec.fix_snippet,
+                evidence=evidence,
                 meta={"path": spec.path, "bytes": len(response.content)},
             )
 
@@ -444,30 +470,56 @@ class SensitiveFileScanner(BaseScanner):
         )
 
     @staticmethod
-    def _is_exposed(
-        response, body: str, spec: SensitivePath, baseline: int | None
-    ) -> bool:
+    def _normalize(text: str) -> str:
+        return re.sub(r"\s+", " ", text[:4000]).strip().lower()
+
+    @classmethod
+    def _classify(
+        cls,
+        response,
+        body: str,
+        spec: SensitivePath,
+        baseline_status: int | None,
+        baseline_body: str | None,
+    ) -> Evidence | None:
         if response.status_code != 200:
-            return False
+            return None
 
         content_type = response.headers.get("content-type", "").lower()
         is_html = "text/html" in content_type or "application/xhtml" in content_type
         body_lower = body.lower()
 
+        # If the body mirrors the random-path baseline, it is a soft-404 echo.
+        if baseline_body is not None and cls._normalize(body) == baseline_body:
+            return None
+
         if spec.markers:
             # A real leak must contain at least one artifact-specific marker.
             if not any(marker.lower() in body_lower for marker in spec.markers):
-                return False
+                return None
             # Secret/config artifacts are never legitimately served as HTML.
             if is_html and not spec.allow_html:
-                return False
-            return True
+                return None
+            # Structural validation defeats generic markers on catch-all pages.
+            if spec.require_json:
+                try:
+                    json.loads(body)
+                except (json.JSONDecodeError, ValueError):
+                    return None
+            if spec.regex and not re.search(spec.regex, body):
+                return None
+            return Evidence.STRONG
 
-        # No markers: only trust a 200 when the site does not answer 200 for a
-        # random (missing) path and the response is not an HTML catch-all.
-        if is_html or baseline == 200:
-            return False
-        return len(response.content) > 0
+        # Markerless artifacts (e.g. backups): require a non-HTML 200 that the
+        # site does not also return for a random path.
+        if is_html or not response.content:
+            return None
+        if baseline_status is None:
+            # Could not establish a baseline, so the result is ambiguous.
+            return Evidence.MODERATE
+        if baseline_status == 200:
+            return None
+        return Evidence.STRONG
 
     async def _check_cookies(self, ctx: ScanContext) -> Finding:
         try:

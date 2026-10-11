@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.models import Finding, Severity
 from app.scanners.base import BaseScanner, ScanContext
+from app.scoring.confidence import Evidence
 
 _PROBE_ORIGIN = "https://vmax-probe.example"
 _DANGEROUS_METHODS = {"PUT", "DELETE", "TRACE", "CONNECT", "PATCH"}
@@ -47,6 +48,7 @@ class ApiSecurityScanner(BaseScanner):
                         "app.add_middleware(CORSMiddleware, "
                         "allow_origins=['https://app.example.com'])"
                     ),
+                    evidence=Evidence.WEAK,
                     meta={"error": str(exc)},
                 )
             lowered = {k.lower(): v for k, v in get_response.headers.items()}
@@ -106,6 +108,7 @@ class ApiSecurityScanner(BaseScanner):
                 summary="Could not enumerate allowed HTTP methods.",
                 explanation="Some servers do not answer OPTIONS requests.",
                 fix_snippet="# Restrict methods at the reverse proxy.",
+                evidence=Evidence.WEAK,
                 meta={"error": str(exc)},
             )
 

@@ -140,7 +140,15 @@ function FragmentRow({ finding, style, isOpen, onToggle }: FragmentRowProps) {
           <div className="font-bold">{finding.name}</div>
           <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">
             <span>{finding.module}</span>
-            <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-400">
+            <span
+              className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                finding.confidence === "high"
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                  : finding.confidence === "medium"
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                    : "border-slate-500/40 bg-slate-500/10 text-slate-400"
+              }`}
+            >
               {finding.confidence} confidence
             </span>
           </div>

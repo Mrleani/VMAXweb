@@ -15,6 +15,7 @@ import httpx
 
 from app.core.config import Settings
 from app.models import Confidence, Finding, Severity, Target
+from app.scoring.confidence import Evidence, confidence_for
 
 
 @dataclass(slots=True)
@@ -58,7 +59,8 @@ class BaseScanner(ABC):
         summary: str,
         explanation: str = "",
         fix_snippet: str = "",
-        confidence: Confidence = Confidence.HIGH,
+        evidence: Evidence = Evidence.DEFINITIVE,
+        confidence: Confidence | None = None,
         meta: dict | None = None,
     ) -> Finding:
         return Finding(
@@ -70,7 +72,7 @@ class BaseScanner(ABC):
             summary=summary,
             explanation=explanation,
             fix_snippet=fix_snippet,
-            confidence=confidence,
+            confidence=confidence or confidence_for(evidence),
             meta=meta or {},
         )
 

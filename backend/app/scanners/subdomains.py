@@ -10,8 +10,12 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+import dns.asyncresolver
+import dns.resolver
+
 from app.models import Finding, Severity
 from app.scanners.base import BaseScanner, ScanContext
+from app.scoring.confidence import Evidence
 
 _CRT_SH_ENDPOINT = "https://crt.sh/"
 _DEV_HINTS = ("dev", "test", "stage", "staging", "admin", "internal", "beta", "uat")
@@ -31,14 +35,31 @@ class SubdomainScanner(BaseScanner):
 
     async def scan(self, ctx: ScanContext) -> list[Finding]:
         domain = ctx.target.host.removeprefix("www.")
-        names = await self._discover(ctx, domain)
+        names, ct_ok = await self._discover(ctx, domain)
+
+        if not ct_ok:
+            return [
+                self.result(
+                    id="discovery",
+                    name="Subdomain Discovery",
+                    severity=Severity.INFO,
+                    status="CT log unavailable",
+                    summary="Certificate Transparency logs could not be queried.",
+                    explanation=(
+                        "Discovery is passive and best-effort; the public CT log was "
+                        "unreachable, so the attack surface could not be mapped."
+                    ),
+                    fix_snippet="# Re-run later or audit DNS records directly.",
+                    evidence=Evidence.WEAK,
+                )
+            ]
 
         if not names:
             return [
                 self.result(
                     id="discovery",
                     name="Subdomain Discovery",
-                    severity=Severity.INFO,
+                    severity=Severity.PASSED,
                     status="No subdomains found",
                     summary="Certificate Transparency logs returned no subdomains.",
                     explanation="No additional surface was mapped from public CT logs.",
@@ -55,14 +76,14 @@ class SubdomainScanner(BaseScanner):
                 id="inventory",
                 name="Subdomain Inventory",
                 severity=Severity.INFO,
-                status=f"{len(names)} found, {len(alive)} alive",
+                status=f"{len(names)} found, {len(alive)} resolving",
                 summary="Subdomains discovered via Certificate Transparency.",
                 explanation=(
                     "Each additional subdomain is additional attack surface; unknown or "
                     "forgotten hosts are common breach entry points."
                 ),
                 fix_snippet="# Maintain an owned-asset inventory and monitor CT logs.",
-                meta={"found": sorted(names), "alive": sorted(h.host for h in alive)},
+                meta={"found": sorted(names), "resolving": sorted(h.host for h in alive)},
             )
         ]
 
@@ -79,6 +100,7 @@ class SubdomainScanner(BaseScanner):
                         "or outdated software."
                     ),
                     fix_snippet="# IP-allowlist or SSO-protect non-production environments.",
+                    evidence=Evidence.STRONG,
                     meta={"hosts": [h.host for h in risky]},
                 )
             )
@@ -97,7 +119,7 @@ class SubdomainScanner(BaseScanner):
 
         return findings
 
-    async def _discover(self, ctx: ScanContext, domain: str) -> set[str]:
+    async def _discover(self, ctx: ScanContext, domain: str) -> tuple[set[str], bool]:
         records = None
         for attempt in range(3):
             try:
@@ -113,7 +135,7 @@ class SubdomainScanner(BaseScanner):
                 if attempt < 2:
                     await asyncio.sleep(1.0 * (attempt + 1))
         if not isinstance(records, list):
-            return set()
+            return set(), False
 
         names: set[str] = set()
         for record in records:
@@ -124,29 +146,28 @@ class SubdomainScanner(BaseScanner):
                     if host.endswith(domain) and host != domain and " " not in host:
                         names.add(host)
 
-        return set(sorted(names)[: ctx.settings.subdomain_limit])
+        return set(sorted(names)[: ctx.settings.subdomain_limit]), True
 
     async def _resolve_all(self, ctx: ScanContext, names: set[str]) -> list[SubdomainHit]:
         semaphore = asyncio.Semaphore(ctx.settings.max_concurrency)
 
         async def resolve(host: str) -> SubdomainHit:
             async with semaphore:
-                alive = await self._is_alive(host, ctx.settings.port_timeout)
+                alive = await self._resolves(host, ctx.settings.port_timeout)
             return SubdomainHit(host=host, alive=alive)
 
         return await asyncio.gather(*(resolve(name) for name in names))
 
     @staticmethod
-    async def _is_alive(host: str, timeout: float) -> bool:
-        try:
-            _reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, 443), timeout=timeout
-            )
-        except (TimeoutError, OSError):
-            return False
-        writer.close()
-        try:
-            await writer.wait_closed()
-        except Exception:  # noqa: BLE001, S110
-            pass
-        return True
+    async def _resolves(host: str, timeout: float) -> bool:
+        resolver = dns.asyncresolver.Resolver()
+        resolver.lifetime = timeout
+        resolver.timeout = timeout
+        for record_type in ("A", "AAAA"):
+            try:
+                answers = await resolver.resolve(host, record_type)
+                if answers:
+                    return True
+            except Exception:  # noqa: BLE001 - NXDOMAIN / timeout / no record
+                continue
+        return False
