@@ -1,3 +1,4 @@
+import json
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,8 +26,10 @@ class Settings(BaseSettings):
     require_verified_target: bool = True
     allowed_schemes: tuple[str, ...] = ("http", "https")
 
-    # CORS origins allowed to call the API (the Next.js frontend)
-    cors_origins: tuple[str, ...] = ("http://localhost:3000",)
+    # CORS origins allowed to call the API (the Next.js frontend).
+    # Accepts either a JSON array (["https://a","https://b"]) or a
+    # comma-separated string (https://a,https://b).
+    cors_origins: str = "http://localhost:3000"
 
     # Supabase persistence (PostgREST). Leave blank to use the in-memory store.
     supabase_url: str = ""
@@ -40,6 +43,18 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment.lower() in {"production", "prod"}
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        raw = self.cors_origins.strip()
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [str(origin).strip() for origin in parsed]
+            except json.JSONDecodeError:
+                pass
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
 @lru_cache
