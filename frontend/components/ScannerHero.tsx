@@ -46,8 +46,8 @@ export function ScannerHero({ onScan, busy }: ScannerHeroProps) {
 
       <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-400">
         Instant automated security audits for modern Web Apps and APIs. Zero setup
-        required. Deep OWASP vulnerability detection with actionable developer
-        remediation.
+        required. OWASP-aligned configuration and exposure checks with actionable
+        developer remediation.
       </p>
 
       <div className="mx-auto mt-10 max-w-3xl">

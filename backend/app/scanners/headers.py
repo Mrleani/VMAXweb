@@ -18,15 +18,19 @@ class HeaderScanner(BaseScanner):
     async def scan(self, ctx: ScanContext) -> list[Finding]:
         response = await ctx.client.get(ctx.target.url)
         headers = {k.lower(): v for k, v in response.headers.items()}
+        content_type = headers.get("content-type", "").lower()
+        is_html = "text/html" in content_type or "application/xhtml" in content_type
         findings: list[Finding] = []
         is_https = ctx.target.scheme == "https"
 
         findings.append(self._check_hsts(headers, is_https))
-        findings.append(self._check_csp(headers))
+        findings.append(self._check_csp(headers, is_html))
         findings.append(self._check_x_frame_options(headers))
         findings.append(self._check_nosniff(headers))
         findings.append(self._check_referrer_policy(headers))
         findings.append(self._check_permissions_policy(headers))
+        findings.append(self._check_coop(headers))
+        findings.append(self._check_corp(headers))
         findings.extend(self._check_info_disclosure(headers))
         return findings
 
@@ -101,7 +105,7 @@ class HeaderScanner(BaseScanner):
             "preload": "preload" in value.lower(),
         }
 
-    def _check_csp(self, headers: dict[str, str]) -> Finding:
+    def _check_csp(self, headers: dict[str, str], is_html: bool) -> Finding:
         value = headers.get("content-security-policy")
         if value:
             weak = "unsafe-inline" in value.lower() or "unsafe-eval" in value.lower()
@@ -124,6 +128,22 @@ class HeaderScanner(BaseScanner):
                     "script-src 'self'; object-src 'none'; base-uri 'self';"
                 ),
                 meta={"raw": value},
+            )
+        if not is_html:
+            return self.result(
+                id="csp",
+                name="Content-Security-Policy (CSP)",
+                severity=Severity.PASSED,
+                status="N/A (non-HTML response)",
+                summary="No HTML is served at this endpoint, so CSP is not applicable.",
+                explanation=(
+                    "CSP only mitigates script execution in HTML documents. JSON/API "
+                    "responses are not affected."
+                ),
+                fix_snippet=(
+                    "Content-Security-Policy: default-src 'self'; script-src 'self';"
+                ),
+                meta={"content_type": "non-html"},
             )
         return self.result(
             id="csp",
@@ -253,6 +273,62 @@ class HeaderScanner(BaseScanner):
                 "third-party scripts."
             ),
             fix_snippet="Permissions-Policy: geolocation=(), camera=(), microphone=()",
+        )
+
+    def _check_coop(self, headers: dict[str, str]) -> Finding:
+        value = headers.get("cross-origin-opener-policy", "")
+        if value:
+            return self.result(
+                id="coop",
+                name="Cross-Origin-Opener-Policy (COOP)",
+                severity=Severity.PASSED,
+                status=value,
+                summary="Browsing contexts are isolated from cross-origin windows.",
+                explanation=(
+                    "COOP isolates your window from cross-origin openers, blocking "
+                    "cross-window attacks such as Spectre-style leaks and tab-nabbing."
+                ),
+                fix_snippet="Cross-Origin-Opener-Policy: same-origin",
+            )
+        return self.result(
+            id="coop",
+            name="Cross-Origin-Opener-Policy (COOP)",
+            severity=Severity.INFO,
+            status="Missing Header",
+            summary="Cross-origin window isolation is not enforced.",
+            explanation=(
+                "Without COOP, a cross-origin page that opened your tab keeps a live "
+                "reference to it, enabling certain side-channel and clickjacking attacks."
+            ),
+            fix_snippet="Cross-Origin-Opener-Policy: same-origin",
+        )
+
+    def _check_corp(self, headers: dict[str, str]) -> Finding:
+        value = headers.get("cross-origin-resource-policy", "")
+        if value:
+            return self.result(
+                id="corp",
+                name="Cross-Origin-Resource-Policy (CORP)",
+                severity=Severity.PASSED,
+                status=value,
+                summary="Cross-origin resource embedding is explicitly restricted.",
+                explanation=(
+                    "CORP prevents other sites from embedding your resources, mitigating "
+                    "cross-origin data leaks (e.g. Spectre, XS-Leaks)."
+                ),
+                fix_snippet="Cross-Origin-Resource-Policy: same-origin",
+            )
+        return self.result(
+            id="corp",
+            name="Cross-Origin-Resource-Policy (CORP)",
+            severity=Severity.INFO,
+            status="Missing Header",
+            summary="Resources can be embedded by any origin.",
+            explanation=(
+                "Without CORP, other origins may load your responses, which can leak "
+                "data through cross-origin side channels."
+            ),
+            fix_snippet="Cross-Origin-Resource-Policy: same-origin",
         )
 
     def _check_info_disclosure(self, headers: dict[str, str]) -> list[Finding]:

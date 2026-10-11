@@ -112,7 +112,7 @@ class ScanEngine:
                         status="Module Error",
                         summary="This module could not complete and was skipped.",
                         explanation="Partial results are shown; re-run the audit to retry.",
-                        confidence="low",
+                        confidence="high",
                         meta={"error": report.error},
                     )
                 )

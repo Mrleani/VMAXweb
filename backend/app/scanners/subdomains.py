@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-from app.models import Confidence, Finding, Severity
+from app.models import Finding, Severity
 from app.scanners.base import BaseScanner, ScanContext
 
 _CRT_SH_ENDPOINT = "https://crt.sh/"
@@ -43,7 +43,6 @@ class SubdomainScanner(BaseScanner):
                     summary="Certificate Transparency logs returned no subdomains.",
                     explanation="No additional surface was mapped from public CT logs.",
                     fix_snippet="# Periodically audit DNS records and CT logs.",
-                    confidence=Confidence.MEDIUM,
                 )
             ]
 
@@ -99,15 +98,21 @@ class SubdomainScanner(BaseScanner):
         return findings
 
     async def _discover(self, ctx: ScanContext, domain: str) -> set[str]:
-        try:
-            response = await ctx.client.get(
-                _CRT_SH_ENDPOINT,
-                params={"q": f"%25.{domain}", "output": "json"},
-                timeout=ctx.settings.request_timeout * 2,
-            )
-            response.raise_for_status()
-            records = response.json()
-        except Exception:  # noqa: BLE001 - CT log is best-effort
+        records = None
+        for attempt in range(3):
+            try:
+                response = await ctx.client.get(
+                    _CRT_SH_ENDPOINT,
+                    params={"q": f"%25.{domain}", "output": "json"},
+                    timeout=ctx.settings.request_timeout * 2,
+                )
+                response.raise_for_status()
+                records = response.json()
+                break
+            except Exception:  # noqa: BLE001 - CT log is best-effort
+                if attempt < 2:
+                    await asyncio.sleep(1.0 * (attempt + 1))
+        if not isinstance(records, list):
             return set()
 
         names: set[str] = set()

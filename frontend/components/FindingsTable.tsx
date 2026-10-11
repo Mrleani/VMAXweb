@@ -138,7 +138,12 @@ function FragmentRow({ finding, style, isOpen, onToggle }: FragmentRowProps) {
       >
         <td className="px-6 py-4 font-medium text-white">
           <div className="font-bold">{finding.name}</div>
-          <div className="text-xs text-slate-400">{finding.module}</div>
+          <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">
+            <span>{finding.module}</span>
+            <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-400">
+              {finding.confidence} confidence
+            </span>
+          </div>
         </td>
         <td className="px-4 py-4">
           <span

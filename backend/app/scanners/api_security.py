@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.models import Confidence, Finding, Severity
+from app.models import Finding, Severity
 from app.scanners.base import BaseScanner, ScanContext
 
 _PROBE_ORIGIN = "https://vmax-probe.example"
@@ -22,24 +22,35 @@ class ApiSecurityScanner(BaseScanner):
 
     async def _check_cors(self, ctx: ScanContext) -> Finding:
         headers = {"Origin": _PROBE_ORIGIN}
+        response = None
         try:
             response = await ctx.client.options(ctx.target.url, headers=headers)
-        except Exception as exc:  # noqa: BLE001
-            return self.result(
-                id="cors",
-                name="CORS Policy Check",
-                severity=Severity.INFO,
-                status="Preflight unavailable",
-                summary="The endpoint did not answer a CORS preflight OPTIONS request.",
-                explanation="CORS misconfiguration is only relevant when cross-origin calls are allowed.",
-                fix_snippet=(
-                    "app.add_middleware(CORSMiddleware, allow_origins=['https://app.example.com'])"
-                ),
-                confidence=Confidence.LOW,
-                meta={"error": str(exc)},
-            )
+        except Exception:  # noqa: BLE001 - fall back to a GET probe below
+            response = None
 
-        lowered = {k.lower(): v for k, v in response.headers.items()}
+        lowered = {k.lower(): v for k, v in response.headers.items()} if response else {}
+        if not lowered.get("access-control-allow-origin"):
+            try:
+                get_response = await ctx.client.get(ctx.target.url, headers=headers)
+            except Exception as exc:  # noqa: BLE001
+                return self.result(
+                    id="cors",
+                    name="CORS Policy Check",
+                    severity=Severity.INFO,
+                    status="Endpoint unreachable",
+                    summary="The endpoint did not answer the CORS probe.",
+                    explanation=(
+                        "CORS misconfiguration is only relevant when cross-origin calls "
+                        "are allowed."
+                    ),
+                    fix_snippet=(
+                        "app.add_middleware(CORSMiddleware, "
+                        "allow_origins=['https://app.example.com'])"
+                    ),
+                    meta={"error": str(exc)},
+                )
+            lowered = {k.lower(): v for k, v in get_response.headers.items()}
+
         allow_origin = lowered.get("access-control-allow-origin", "")
         allow_credentials = lowered.get("access-control-allow-credentials", "").lower() == "true"
 
@@ -95,7 +106,6 @@ class ApiSecurityScanner(BaseScanner):
                 summary="Could not enumerate allowed HTTP methods.",
                 explanation="Some servers do not answer OPTIONS requests.",
                 fix_snippet="# Restrict methods at the reverse proxy.",
-                confidence=Confidence.LOW,
                 meta={"error": str(exc)},
             )
 
