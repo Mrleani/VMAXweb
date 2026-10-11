@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: vmaxweb-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: VMAX_ENVIRONMENT
+        value: production
+      - key: VMAX_PORT_SCAN_ENABLED
+        value: "true"
+      - key: VMAX_REQUIRE_VERIFIED_TARGET
+        value: "true"
+      - key: VMAX_CORS_ORIGINS
+        sync: false
+      - key: VMAX_SUPABASE_URL
+        sync: false
+      - key: VMAX_SUPABASE_SERVICE_KEY
+        sync: false
+      - key: VMAX_SUPABASE_JWT_SECRET
+        sync: false
+      - key: VMAX_AUTH_REQUIRED
+        value: "false"
