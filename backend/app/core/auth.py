@@ -92,4 +92,15 @@ async def get_current_user(
             detail="Token missing subject",
         )
 
-    return CurrentUser(id=subject, email=payload.get("email"))
+    email = payload.get("email")
+    user = CurrentUser(id=subject, email=email)
+
+    # Auto-grant owner Pro for configured admin emails.
+    if email and email.lower() in settings.admin_emails:
+        account = account_store.get(subject)
+        if not account.is_owner:
+            account.is_owner = True
+            account.plan = "pro"
+            account.priority_support = True
+
+    return user

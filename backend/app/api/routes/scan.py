@@ -58,8 +58,8 @@ def _month_start() -> datetime:
 
 async def _plan_for(repository: ScanRepository, user_id: str) -> str:
     """Account store is authoritative; repository is the legacy fallback."""
-    plan = account_store.get(user_id).plan
-    if plan == "pro":
+    account = account_store.get(user_id)
+    if account.plan == "pro" or account.is_owner:
         return "pro"
     return await repository.get_plan(user_id)
 

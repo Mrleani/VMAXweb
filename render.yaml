@@ -39,3 +39,5 @@ services:
         sync: false
       - key: VMAX_STRIPE_PRICE_ID
         sync: false
+      - key: VMAX_ADMIN_EMAILS_RAW
+        sync: false

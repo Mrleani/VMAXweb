@@ -52,8 +52,9 @@ class Account:
     webhook_url: str | None = None
     webhook_secret: str | None = None
     alert_email: str | None = None
-    alert_min_severity: str = "critical"  # critical | warning | info
+    alert_min_severity: str = "critical"
     priority_support: bool = False
+    is_owner: bool = False
     api_keys: list[ApiKey] = field(default_factory=list)
     schedules: list[Schedule] = field(default_factory=list)
 

@@ -88,6 +88,7 @@ export interface AccountInfo {
   alert_email: string | null;
   alert_min_severity: "critical" | "warning" | "info";
   priority_support: boolean;
+  is_owner: boolean;
 }
 
 export interface AccountUpdatePayload {

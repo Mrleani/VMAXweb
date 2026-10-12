@@ -33,7 +33,7 @@ def _month_start() -> datetime:
 
 
 def _entitlements(account: Account) -> Entitlements:
-    pro = account.is_pro
+    pro = account.is_pro or account.is_owner
     return Entitlements(
         unlimited_scans=pro,
         active_modules=True,
@@ -66,6 +66,7 @@ async def _account_info(
         alert_email=account.alert_email,
         alert_min_severity=account.alert_min_severity,
         priority_support=account.priority_support,
+        is_owner=account.is_owner,
     )
 
 

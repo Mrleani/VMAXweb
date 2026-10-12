@@ -32,6 +32,7 @@ class AccountInfo(BaseModel):
     alert_email: str | None = None
     alert_min_severity: str
     priority_support: bool = False
+    is_owner: bool = False
 
 
 class AccountUpdate(BaseModel):

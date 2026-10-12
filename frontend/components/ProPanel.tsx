@@ -10,6 +10,7 @@ import {
   Loader2,
   Plus,
   ShieldCheck,
+  Star,
   Trash2,
   Webhook,
 } from "lucide-react";
@@ -254,6 +255,11 @@ export function ProPanel({ accessToken, refreshSignal = 0 }: ProPanelProps) {
           {account.priority_support && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-300">
               <ShieldCheck className="h-3.5 w-3.5" /> Priority Support
+            </span>
+          )}
+          {account.is_owner && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-300">
+              <Star className="h-3.5 w-3.5" /> Owner
             </span>
           )}
           <button

@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     smtp_from: str = "alerts@vmaxweb.io"
     smtp_starttls: bool = True
 
+    # Admin/owner emails (comma-separated). These users get unlimited Pro automatically.
+    admin_emails_raw: str = ""
+
     @property
     def pro_enabled(self) -> bool:
         return bool(self.stripe_secret_key and self.stripe_price_id)
@@ -65,6 +68,10 @@ class Settings(BaseSettings):
     @property
     def email_alerts_configured(self) -> bool:
         return bool(self.smtp_host and self.smtp_from)
+
+    @property
+    def admin_emails(self) -> set[str]:
+        return {e.strip().lower() for e in self.admin_emails_raw.split(",") if e.strip()}
 
     @property
     def is_production(self) -> bool:
